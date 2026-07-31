@@ -117,22 +117,26 @@ function validateAnalysis(value) {
   return value;
 }
 
-async function requestAnalysis(url, apiKey, body) {
+async function requestAnalysis(url, apiKey, body, attempts = 3) {
   const headers = { "Content-Type": "application/json" };
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-  const response = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body)
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body)
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (response.ok) return payload;
+
     const message = payload?.error?.message || `${response.status} ${response.statusText}`;
     const error = new Error(message);
     error.status = response.status;
-    throw error;
+    if (![429, 500, 502, 503, 504].includes(response.status) || attempt === attempts - 1) {
+      throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
   }
-  return payload;
 }
 
 function responsesContent(payload) {

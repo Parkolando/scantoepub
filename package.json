@@ -1,6 +1,6 @@
 {
   "name": "scan-to-epub",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Convert clean scanned PDFs into mixed reflowable and image-based EPUB 3 books.",
   "main": "src/main.cjs",
   "author": "Parkolando",

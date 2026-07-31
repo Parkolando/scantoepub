@@ -1,5 +1,6 @@
 import * as pdfjs from "../node_modules/pdfjs-dist/build/pdf.mjs";
 import { createEpub } from "./epub.mjs";
+import { runPool } from "./pool.mjs";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "../node_modules/pdfjs-dist/build/pdf.worker.mjs",
@@ -16,6 +17,7 @@ const elements = {
   baseUrl: $("#base-url"),
   model: $("#model"),
   apiKey: $("#api-key"),
+  concurrency: $("#concurrency"),
   title: $("#book-title"),
   author: $("#book-author"),
   language: $("#book-language"),
@@ -41,6 +43,7 @@ const state = {
 
 elements.baseUrl.value = localStorage.getItem("baseUrl") || elements.baseUrl.value;
 elements.model.value = localStorage.getItem("model") || "";
+elements.concurrency.value = localStorage.getItem("concurrency") || "3";
 
 function toast(message) {
   elements.toast.textContent = message;
@@ -344,43 +347,64 @@ elements.pdfInput.addEventListener("change", async () => {
 elements.analyze.addEventListener("click", async () => {
   const start = Math.max(1, Number(elements.rangeStart.value) || 1);
   const end = Math.min(state.pages.length, Number(elements.rangeEnd.value) || state.pages.length);
+  const concurrency = Math.max(1, Math.min(12, Math.floor(Number(elements.concurrency.value) || 1)));
   if (start > end) return toast("페이지 범위를 확인하세요.");
   if (!elements.baseUrl.value.trim() || !elements.model.value.trim()) {
     return toast("API 주소와 모델을 입력하세요.");
   }
+  const pending = state.pages
+    .slice(start - 1, end)
+    .filter((page) => !page.analysis)
+    .map((page) => page.number);
+  if (!pending.length) {
+    elements.status.textContent = "선택한 범위는 이미 모두 분석됐습니다.";
+    return toast("실패하거나 미처리된 페이지가 없습니다.");
+  }
 
   localStorage.setItem("baseUrl", elements.baseUrl.value.trim());
   localStorage.setItem("model", elements.model.value.trim());
+  localStorage.setItem("concurrency", concurrency);
+  elements.concurrency.value = concurrency;
   state.running = true;
   state.canceled = false;
   updateControls();
-  let previousTail = start > 1 ? tailFrom(state.pages[start - 2]) : "";
+  let completed = 0;
+  let failed = 0;
 
-  for (let number = start; number <= end; number += 1) {
-    if (state.canceled) break;
+  await runPool(pending, concurrency, async (number) => {
+    // ponytail: parallel pages use prior OCR only when already available; add paired-page context if measured continuity quality needs it.
+    const previousTail = number > 1 ? tailFrom(state.pages[number - 2]) : "";
     try {
-      previousTail = await processPage(number, previousTail);
-      const progress = ((number - start + 1) / (end - start + 1)) * 100;
-      elements.progress.style.width = `${progress}%`;
+      await processPage(number, previousTail);
     } catch (error) {
       const page = state.pages[number - 1];
       page.analysis = null;
       page.error = errorText(error);
       replaceResult(page);
-      elements.status.textContent = `${number}페이지에서 멈췄습니다: ${page.error}`;
-      break;
+      failed += 1;
+    } finally {
+      completed += 1;
+      elements.progress.style.width = `${completed / pending.length * 100}%`;
+      elements.status.textContent = `병렬 분석 중… ${completed}/${pending.length} 완료${failed ? ` · 실패 ${failed}` : ""}`;
     }
-  }
+  }, () => state.canceled);
 
   state.running = false;
-  elements.status.textContent = state.canceled ? "분석을 중지했습니다." : elements.status.textContent.includes("멈췄") ? elements.status.textContent : "선택한 범위의 분석이 끝났습니다.";
+  const remaining = state.pages.slice(start - 1, end).filter((page) => !page.analysis).length;
+  if (state.canceled) {
+    elements.status.textContent = `분석을 중지했습니다. ${remaining}페이지가 남았습니다. 다시 누르면 이어집니다.`;
+  } else if (failed) {
+    elements.status.textContent = `${completed - failed}페이지 완료 · ${failed}페이지 실패. 다시 누르면 실패한 페이지부터 이어집니다.`;
+  } else {
+    elements.status.textContent = "선택한 범위의 분석이 끝났습니다.";
+  }
   updateControls();
 });
 
 elements.cancel.addEventListener("click", () => {
   state.canceled = true;
   elements.cancel.disabled = true;
-  elements.status.textContent = "현재 페이지가 끝나면 중지합니다…";
+  elements.status.textContent = "진행 중인 요청이 끝나면 중지합니다…";
 });
 
 elements.export.addEventListener("click", async () => {

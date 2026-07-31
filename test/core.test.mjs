@@ -4,6 +4,7 @@ import { once } from "node:events";
 import http from "node:http";
 import { createRequire } from "node:module";
 import { makeSections, createEpub } from "../src/epub.mjs";
+import { runPool } from "../src/pool.mjs";
 
 const require = createRequire(import.meta.url);
 const JSZip = require("jszip");
@@ -34,6 +35,7 @@ test("parses fenced JSON and validates page analysis", () => {
 
 test("falls back to Responses API when chat rejects data URLs", async () => {
   const requests = [];
+  let responseAttempts = 0;
   const server = http.createServer((request, response) => {
     let body = "";
     request.setEncoding("utf8");
@@ -44,6 +46,13 @@ test("falls back to Responses API when chat rejects data URLs", async () => {
       if (request.url === "/v1/chat/completions") {
         response.writeHead(400).end(JSON.stringify({
           error: { message: "URL scheme must be http or https, got data:" }
+        }));
+        return;
+      }
+      responseAttempts += 1;
+      if (responseAttempts === 1) {
+        response.writeHead(500).end(JSON.stringify({
+          error: { message: "temporary failure" }
         }));
         return;
       }
@@ -78,12 +87,27 @@ test("falls back to Responses API when chat rejects data URLs", async () => {
     assert.equal(result.blocks[0].text, "본문");
     assert.deepEqual(requests.map((request) => request.url), [
       "/v1/chat/completions",
+      "/v1/responses",
       "/v1/responses"
     ]);
-    assert.equal(requests[1].body.input[0].content[1].type, "input_image");
+    assert.equal(requests[2].body.input[0].content[1].type, "input_image");
   } finally {
     server.close();
   }
+});
+
+test("limits parallel work and returns results in input order", async () => {
+  let active = 0;
+  let maximum = 0;
+  const results = await runPool([1, 2, 3, 4, 5], 3, async (value) => {
+    active += 1;
+    maximum = Math.max(maximum, active);
+    await new Promise((resolve) => setTimeout(resolve, (6 - value) * 5));
+    active -= 1;
+    return value * 2;
+  });
+  assert.equal(maximum, 3);
+  assert.deepEqual(results, [2, 4, 6, 8, 10]);
 });
 
 test("removes source page boundaries but preserves designed full pages", () => {

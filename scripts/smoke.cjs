@@ -7,15 +7,16 @@ const os = require("node:os");
 const path = require("node:path");
 
 function samplePdf() {
+  const stream = "BT /F1 28 Tf 72 700 Td (Scan to EPUB) Tj 0 -45 Td /F1 16 Tf (Continuous paragraph.) Tj ET";
   const objects = [
     "<< /Type /Catalog /Pages 2 0 R >>",
-    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
-    null,
+    "<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R] /Count 3 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 7 0 R >> >> /Contents 6 0 R >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 7 0 R >> >> /Contents 6 0 R >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 7 0 R >> >> /Contents 6 0 R >>",
+    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`,
     "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
   ];
-  const stream = "BT /F1 28 Tf 72 700 Td (Scan to EPUB) Tj 0 -45 Td /F1 16 Tf (Continuous paragraph.) Tj ET";
-  objects[3] = `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`;
   let pdf = "%PDF-1.4\n";
   const offsets = [0];
   objects.forEach((body, index) => {
@@ -88,30 +89,54 @@ async function main() {
   await writeFile(pdfPath, samplePdf(), "binary");
 
   let authorization;
+  let activeRequests = 0;
+  let maximumRequests = 0;
+  const attemptsByPage = new Map();
   const api = http.createServer((request, response) => {
     if (request.method !== "POST" || request.url !== "/v1/chat/completions") {
       response.writeHead(404).end();
       return;
     }
     authorization = request.headers.authorization;
-    request.resume();
-    response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({
-      choices: [{
-        message: {
-          content: JSON.stringify({
-            mode: "reflow",
-            reason: "linear text",
-            confidence: 0.99,
-            altText: "",
-            blocks: [
-              { type: "heading", bbox: [100, 80, 700, 180], text: "Scan to EPUB", level: 1 },
-              { type: "paragraph", bbox: [100, 180, 900, 280], text: "Continuous paragraph." }
-            ]
-          })
+    let requestBody = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => requestBody += chunk);
+    request.on("end", () => {
+      const body = JSON.parse(requestBody);
+      const prompt = body.messages[1].content[0].text;
+      const page = Number(prompt.match(/Scan page (\d+)/)?.[1] || 0);
+      const attempt = (attemptsByPage.get(page) || 0) + 1;
+      attemptsByPage.set(page, attempt);
+      const delay = { 1: 300, 2: 50, 3: 150 }[page] || 0;
+      activeRequests += 1;
+      maximumRequests = Math.max(maximumRequests, activeRequests);
+      setTimeout(() => {
+        if (page === 2 && attempt <= 3) {
+          response.writeHead(500, { "Content-Type": "application/json" });
+          response.end(JSON.stringify({ error: { message: "temporary failure" } }));
+          activeRequests -= 1;
+          return;
         }
-      }]
-    }));
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                mode: "reflow",
+                reason: "linear text",
+                confidence: 0.99,
+                altText: "",
+                blocks: [
+                  { type: "heading", bbox: [100, 80, 700, 180], text: `Page ${page}`, level: 1 },
+                  { type: "paragraph", bbox: [100, 180, 900, 280], text: `Paragraph ${page}` }
+                ]
+              })
+            }
+          }]
+        }));
+        activeRequests -= 1;
+      }, delay);
+    });
   });
   api.listen(0, "127.0.0.1");
   await once(api, "listening");
@@ -170,17 +195,56 @@ async function main() {
       expression: `(() => {
         document.querySelector('#base-url').value = 'http://127.0.0.1:${apiPort}/v1';
         document.querySelector('#model').value = 'mock-vision';
+        document.querySelector('#concurrency').value = '2';
         document.querySelector('#analyze').click();
       })()`
+    });
+    let firstRun;
+    try {
+      firstRun = await waitFor(async () => {
+      const evaluation = await cdp.call("Runtime.evaluate", {
+        expression: `(() => {
+          const status = document.querySelector('#status')?.textContent;
+          return status.includes('실패한 페이지부터 이어집니다') && {
+            order: [...document.querySelector('#results').children].map(item => item.dataset.page),
+            cards: [...document.querySelectorAll('.page-card')].map(card => card.dataset.page),
+            errors: [...document.querySelectorAll('.error-card')].map(card => card.dataset.page),
+            status
+          };
+        })()`,
+        returnByValue: true
+      });
+      return evaluation.result.value;
+      }, 30000);
+    } catch (error) {
+      const diagnostic = await cdp.call("Runtime.evaluate", {
+        expression: `({
+          status: document.querySelector('#status')?.textContent,
+          summary: document.querySelector('#pdf-summary')?.textContent,
+          cards: [...document.querySelectorAll('.page-card')].map(card => card.dataset.page),
+          errors: [...document.querySelectorAll('.error-card')].map(card => card.textContent)
+        })`,
+        returnByValue: true
+      });
+      throw new Error(`${error.message}: ${JSON.stringify(diagnostic.result.value)}`);
+    }
+    assert.deepEqual(firstRun, {
+      order: ["1", "2", "3"],
+      cards: ["1", "3"],
+      errors: ["2"],
+      status: "2페이지 완료 · 1페이지 실패. 다시 누르면 실패한 페이지부터 이어집니다."
+    });
+
+    await cdp.call("Runtime.evaluate", {
+      expression: "document.querySelector('#analyze').click()"
     });
     const result = await waitFor(async () => {
       const evaluation = await cdp.call("Runtime.evaluate", {
         expression: `(() => {
-          const card = document.querySelector('.page-card');
-          return card && {
-            badge: card.querySelector('.badge')?.textContent,
-            heading: card.querySelector('.preview h1')?.textContent,
-            paragraph: card.querySelector('.preview p:not(.reason)')?.textContent,
+          const cards = [...document.querySelectorAll('.page-card')];
+          return cards.length === 3 && {
+            order: cards.map(card => card.dataset.page),
+            headings: cards.map(card => card.querySelector('.preview h1')?.textContent),
             status: document.querySelector('#status')?.textContent
           };
         })()`,
@@ -189,11 +253,12 @@ async function main() {
       return evaluation.result.value;
     }, 30000);
     assert.deepEqual(result, {
-      badge: "연속 텍스트",
-      heading: "Scan to EPUB",
-      paragraph: "Continuous paragraph.",
+      order: ["1", "2", "3"],
+      headings: ["Page 1", "Page 2", "Page 3"],
       status: "선택한 범위의 분석이 끝났습니다."
     });
+    assert.equal(maximumRequests, 2);
+    assert.deepEqual(Object.fromEntries(attemptsByPage), { 1: 1, 2: 4, 3: 1 });
     assert.equal(authorization, undefined);
     console.log("Electron smoke test passed");
   } finally {
