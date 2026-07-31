@@ -1,11 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { once } from "node:events";
+import http from "node:http";
 import { createRequire } from "node:module";
 import { makeSections, createEpub } from "../src/epub.mjs";
 
 const require = createRequire(import.meta.url);
 const JSZip = require("jszip");
-const { endpoint, parseJson, validateAnalysis } = require("../src/openai.cjs");
+const { analyzePage, endpoint, parseJson, validateAnalysis } = require("../src/openai.cjs");
 
 const image = {
   id: "full-page-3",
@@ -28,6 +30,60 @@ test("parses fenced JSON and validates page analysis", () => {
   assert.equal(value.confidence, 1);
   assert.deepEqual(value.blocks[0].bbox, [0, 0, 1000, 900]);
   assert.throws(() => validateAnalysis({ mode: "unknown" }), /mode/);
+});
+
+test("falls back to Responses API when chat rejects data URLs", async () => {
+  const requests = [];
+  const server = http.createServer((request, response) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => body += chunk);
+    request.on("end", () => {
+      requests.push({ url: request.url, body: JSON.parse(body) });
+      response.setHeader("Content-Type", "application/json");
+      if (request.url === "/v1/chat/completions") {
+        response.writeHead(400).end(JSON.stringify({
+          error: { message: "URL scheme must be http or https, got data:" }
+        }));
+        return;
+      }
+      response.end(JSON.stringify({
+        output: [{
+          type: "message",
+          content: [{
+            type: "output_text",
+            text: JSON.stringify({
+              mode: "reflow",
+              reason: "linear text",
+              confidence: 0.9,
+              blocks: [{ type: "paragraph", bbox: [0, 0, 1000, 1000], text: "본문" }]
+            })
+          }]
+        }]
+      }));
+    });
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    const result = await analyzePage({
+      baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
+      apiKey: "test",
+      model: "vision",
+      imageDataUrl: "data:image/jpeg;base64,AA==",
+      pageNumber: 1,
+      totalPages: 1,
+      previousTail: ""
+    });
+    assert.equal(result.blocks[0].text, "본문");
+    assert.deepEqual(requests.map((request) => request.url), [
+      "/v1/chat/completions",
+      "/v1/responses"
+    ]);
+    assert.equal(requests[1].body.input[0].content[1].type, "input_image");
+  } finally {
+    server.close();
+  }
 });
 
 test("removes source page boundaries but preserves designed full pages", () => {

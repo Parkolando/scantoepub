@@ -39,7 +39,7 @@ Schema:
   ]
 }`;
 
-function endpoint(baseUrl) {
+function resourceEndpoint(baseUrl, resource) {
   let url;
   try {
     url = new URL(baseUrl);
@@ -50,10 +50,13 @@ function endpoint(baseUrl) {
     throw new Error("API 주소는 HTTP 또는 HTTPS여야 합니다.");
   }
   url.pathname = url.pathname.replace(/\/+$/, "");
-  if (!url.pathname.endsWith("/chat/completions")) {
-    url.pathname += "/chat/completions";
-  }
+  url.pathname = url.pathname.replace(/\/(?:chat\/completions|responses)$/, "");
+  url.pathname += resource;
   return url.toString();
+}
+
+function endpoint(baseUrl) {
+  return resourceEndpoint(baseUrl, "/chat/completions");
 }
 
 function contentText(content) {
@@ -132,9 +135,44 @@ async function requestAnalysis(url, apiKey, body) {
   return payload;
 }
 
+function responsesContent(payload) {
+  if (typeof payload?.output_text === "string") return payload.output_text;
+  return (payload?.output || [])
+    .flatMap((item) => item?.content || [])
+    .map((part) => part?.text || "")
+    .join("");
+}
+
+function rejectsDataUrl(error) {
+  return /(?:scheme.*data|got data:|must be http or https)/i.test(error?.message || "");
+}
+
+async function analyzeWithResponses({ baseUrl, apiKey, model, imageDataUrl, userText }, chatError) {
+  const body = {
+    model,
+    instructions: SYSTEM_PROMPT,
+    input: [{
+      role: "user",
+      content: [
+        { type: "input_text", text: userText },
+        { type: "input_image", image_url: imageDataUrl, detail: "high" }
+      ]
+    }]
+  };
+  try {
+    const payload = await requestAnalysis(resourceEndpoint(baseUrl, "/responses"), apiKey, body);
+    const content = responsesContent(payload);
+    if (!content) throw new Error("Responses API 응답에 텍스트가 없습니다.");
+    return validateAnalysis(parseJson(content));
+  } catch (error) {
+    throw new Error(`이 서버가 Chat Completions의 Base64 이미지를 거부했고 Responses API 전환도 실패했습니다: ${error.message || chatError.message}`);
+  }
+}
+
 async function analyzePage({ baseUrl, apiKey, model, imageDataUrl, pageNumber, totalPages, previousTail }) {
   if (!model || !imageDataUrl) throw new Error("모델과 페이지 이미지가 필요합니다.");
   const url = endpoint(baseUrl);
+  const userText = `Scan page ${pageNumber} of ${totalPages}. Previous extracted tail for continuity:\n${previousTail || "(none)"}`;
   const body = {
     model,
     temperature: 0,
@@ -145,7 +183,7 @@ async function analyzePage({ baseUrl, apiKey, model, imageDataUrl, pageNumber, t
         content: [
           {
             type: "text",
-            text: `Scan page ${pageNumber} of ${totalPages}. Previous extracted tail for continuity:\n${previousTail || "(none)"}`
+            text: userText
           },
           { type: "image_url", image_url: { url: imageDataUrl, detail: "high" } }
         ]
@@ -158,9 +196,19 @@ async function analyzePage({ baseUrl, apiKey, model, imageDataUrl, pageNumber, t
   try {
     payload = await requestAnalysis(url, apiKey, body);
   } catch (error) {
+    if (rejectsDataUrl(error)) {
+      return analyzeWithResponses({ baseUrl, apiKey, model, imageDataUrl, userText }, error);
+    }
     if (error.status !== 400) throw error;
     delete body.response_format;
-    payload = await requestAnalysis(url, apiKey, body);
+    try {
+      payload = await requestAnalysis(url, apiKey, body);
+    } catch (retryError) {
+      if (rejectsDataUrl(retryError)) {
+        return analyzeWithResponses({ baseUrl, apiKey, model, imageDataUrl, userText }, retryError);
+      }
+      throw retryError;
+    }
   }
   const content = payload?.choices?.[0]?.message?.content;
   if (!content) throw new Error("모델 응답에 content가 없습니다.");
