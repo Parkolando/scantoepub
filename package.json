@@ -1,0 +1,37 @@
+{
+  "name": "scan-to-epub",
+  "version": "0.1.0",
+  "description": "Convert clean scanned PDFs into mixed reflowable and image-based EPUB 3 books.",
+  "main": "src/main.cjs",
+  "author": "Parkolando",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "test:smoke": "node scripts/smoke.cjs",
+    "dist": "electron-builder --win portable --x64"
+  },
+  "dependencies": {
+    "jszip": "3.10.1",
+    "pdfjs-dist": "6.2.108"
+  },
+  "devDependencies": {
+    "electron": "43.2.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.parkolando.scantoepub",
+    "productName": "Scan to EPUB",
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ]
+    }
+  }
+}
