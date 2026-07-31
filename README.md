@@ -16,7 +16,7 @@
 
 ## 사용
 
-1. `Scan to EPUB-0.1.2-x64.exe`를 실행한다.
+1. `Scan-to-EPUB-0.1.3-x64-setup.exe`를 설치해 실행한다.
 2. PDF를 선택하고 분석 범위를 정한다.
 3. OpenAI 호환 `/chat/completions` 주소와 멀티모달 모델을 입력한다.
 4. 원격 API라면 키를 입력한다. 인증 없는 로컬 서버는 비워도 된다.
@@ -25,6 +25,7 @@
 
 API 키는 저장하지 않는다. API 주소와 모델 이름만 로컬 앱 설정에 남는다.
 Chat Completions가 Base64 이미지를 거부하면 같은 서버의 Responses API로 자동 전환한다.
+설치형 앱은 실행할 때 GitHub Releases에서 업데이트를 확인하고 자동 다운로드한다.
 
 ## 개발
 
@@ -39,4 +40,4 @@ npm run test:smoke
 npm run dist
 ```
 
-`npm run dist`는 `dist/Scan to EPUB-0.1.2-x64.exe`를 만든다. 생성기의 혼합 reflow/fixed-layout 샘플은 EPUBCheck 5.3.0에서 오류와 경고 없이 검증됐다.
+`npm run dist`는 자동 업데이트가 가능한 NSIS 설치 파일을 만든다. 생성기의 혼합 reflow/fixed-layout 샘플은 EPUBCheck 5.3.0에서 오류와 경고 없이 검증됐다.

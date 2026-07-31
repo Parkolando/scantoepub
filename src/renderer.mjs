@@ -30,6 +30,7 @@ const elements = {
   count: $("#result-count"),
   empty: $("#empty-state"),
   results: $("#results"),
+  updateStatus: $("#update-status"),
   toast: $("#toast")
 };
 
@@ -44,6 +45,18 @@ const state = {
 elements.baseUrl.value = localStorage.getItem("baseUrl") || elements.baseUrl.value;
 elements.model.value = localStorage.getItem("model") || "";
 elements.concurrency.value = localStorage.getItem("concurrency") || "3";
+
+window.desktop.onUpdateStatus(({ state: updateState, version, percent }) => {
+  const messages = {
+    checking: "업데이트 확인 중…",
+    available: `업데이트 ${version} 다운로드 중…`,
+    current: "최신 버전",
+    downloading: `업데이트 다운로드 ${percent}%`,
+    downloaded: `업데이트 ${version} 설치 준비 완료`,
+    error: "업데이트 확인 실패"
+  };
+  elements.updateStatus.textContent = messages[updateState] || "";
+});
 
 function toast(message) {
   elements.toast.textContent = message;
