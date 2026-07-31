@@ -1,35 +1,37 @@
 # Scan to EPUB
 
-깔끔하게 파괴식 스캔한 PDF를 reflowable EPUB 3 전자책으로 재구성하는 Electron 앱.
+[한국어](README.ko.md) | [日本語](README.ja.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
-## 동작
+An Electron app that reconstructs clean, destructively scanned PDFs as reflowable EPUB 3 ebooks.
 
-- 일반 페이지의 PDF 페이지 경계를 제거하고 본문을 연속 XHTML로 합친다.
-- 목차, 챕터 표지, 장식 구성, 반전 페이지처럼 재현 손실이 큰 페이지는 전체 이미지로 보존한다.
-- 사진·삽화·수식·복잡한 표는 원본 렌더링에서 잘라 삽입한다.
-- 단순 표는 안전한 XHTML 표로 생성한다.
-- 페이지 사이에 이어진 문단을 합친다.
-- 실패한 페이지를 건너뛰고 나머지를 계속 처리하며, 다음 실행에서 실패·미처리 페이지만 이어서 분석한다.
-- 지정한 요청 수만큼 병렬 처리하되 결과는 원본 순서로 정렬한다.
-- 분석 결과의 텍스트를 앱에서 직접 수정할 수 있다.
-- 첫 페이지 표지, 제목, 저자, 언어와 목차를 포함한 EPUB 3 파일을 저장한다.
-- UI는 한국어, 영어, 중국어 간체·번체, 일본어를 지원한다.
+## Features
 
-## 사용
+- Removes PDF page boundaries from regular pages and merges the body into continuous XHTML.
+- Preserves tables of contents, chapter covers, decorative layouts, reversed pages, and other designs that would lose fidelity as full-page images.
+- Crops photos, illustrations, equations, and complex tables from the original rendering and inserts them into the ebook.
+- Converts simple tables into safe XHTML tables.
+- Joins paragraphs that continue across scanned pages.
+- Skips failed pages, continues processing the rest, and resumes only failed or unprocessed pages on the next run.
+- Processes the configured number of requests in parallel while keeping results in source order.
+- Lets you edit recognized text directly in the app.
+- Saves an EPUB 3 file with a cover, title, author, language, and table of contents.
+- Supports Korean, English, Simplified Chinese, Traditional Chinese, and Japanese UI languages.
 
-1. `Scan-to-EPUB-0.2.0-x64-setup.exe`를 설치해 실행한다.
-2. PDF를 선택하고 분석 범위를 정한다.
-3. OpenAI 호환 `/chat/completions` 주소와 멀티모달 모델을 입력한다.
-4. 원격 API라면 키를 입력한다. 인증 없는 로컬 서버는 비워도 된다.
-5. `페이지 분석` 후 결과를 검수·수정한다.
-6. `EPUB 저장`을 누른다.
+## Usage
 
-API 키는 저장하지 않는다. API 주소와 모델 이름만 로컬 앱 설정에 남는다.
-Chat Completions가 Base64 이미지를 거부하면 같은 서버의 Responses API로 자동 전환한다.
-설치형 앱은 실행할 때 GitHub Releases에서 업데이트를 확인하고 자동 다운로드한다.
-책 언어에는 BCP 47 코드를 입력한다. 한국어 `ko`, 영어 `en`, 일본어 `ja`, 중국어 간체 `zh-Hans`, 번체 `zh-Hant`를 권장한다.
+1. Install and run `Scan-to-EPUB-0.2.0-x64-setup.exe`.
+2. Select a PDF and choose the page range to analyze.
+3. Enter an OpenAI-compatible `/chat/completions` URL and a multimodal model name.
+4. Enter an API key for a remote API. Leave it blank for an unauthenticated local server.
+5. Run the page analysis, then review and edit the results.
+6. Select `Save EPUB`.
 
-## 개발
+The API key is never stored. Only the API URL and model name remain in local app settings.
+If Chat Completions rejects Base64 images, the app automatically falls back to the same server's Responses API.
+The installed app checks GitHub Releases at startup and downloads updates automatically.
+Enter a BCP 47 code for the book language. Recommended values are `ko` for Korean, `en` for English, `ja` for Japanese, `zh-Hans` for Simplified Chinese, and `zh-Hant` for Traditional Chinese.
+
+## Development
 
 ```powershell
 npm install
@@ -42,4 +44,4 @@ npm run test:smoke
 npm run dist
 ```
 
-`npm run dist`는 자동 업데이트가 가능한 NSIS 설치 파일을 만든다. 생성기의 혼합 reflow/fixed-layout 샘플은 EPUBCheck 5.3.0에서 오류와 경고 없이 검증됐다.
+`npm run dist` creates an auto-updatable NSIS installer. The generator's mixed reflowable/fixed-layout sample passes EPUBCheck 5.3.0 with no errors or warnings.
