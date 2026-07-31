@@ -22,7 +22,7 @@ body {
   font: 15px/1.5 Inter, Pretendard, "Noto Sans KR", system-ui, sans-serif;
 }
 
-button, input { font: inherit; }
+button, input, select { font: inherit; }
 
 .topbar {
   min-height: 118px;
@@ -49,6 +49,8 @@ h3 { margin-bottom: 8px; font-size: 18px; }
 
 .tagline { max-width: 520px; margin-bottom: 2px; color: var(--muted); text-align: right; }
 .update-status { min-height: 1em; margin: 4px 0 0; color: var(--accent); font-size: 12px; text-align: right; }
+.ui-language { margin: 0 0 8px; display: flex; align-items: center; justify-content: end; gap: 8px; }
+.ui-language select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--ink); }
 
 main {
   display: grid;
@@ -105,6 +107,7 @@ input:focus { border-color: var(--forest); box-shadow: 0 0 0 3px rgba(40,72,58,.
 .file-drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .file-drop span { color: var(--accent-dark); font-size: 15px; }
 .file-drop small, .muted { color: var(--muted); font-weight: 400; }
+.field-help { display: block; margin-top: 4px; color: var(--muted); font-weight: 400; }
 .muted { margin: 9px 0 0; font-size: 12px; }
 
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

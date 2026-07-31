@@ -4,6 +4,7 @@ import { once } from "node:events";
 import http from "node:http";
 import { createRequire } from "node:module";
 import { makeSections, createEpub } from "../src/epub.mjs";
+import { messages, normalizeLocale, translate } from "../src/i18n.mjs";
 import { runPool } from "../src/pool.mjs";
 
 const require = createRequire(import.meta.url);
@@ -18,6 +19,16 @@ const image = {
   height: 1600,
   dataUrl: "data:image/jpeg;base64,/9j/2Q=="
 };
+
+test("ships complete UI translations for every supported locale", () => {
+  const keys = Object.keys(messages.ko).sort();
+  for (const locale of ["en", "zh-CN", "zh-TW", "ja"]) {
+    assert.deepEqual(Object.keys(messages[locale]).sort(), keys);
+  }
+  assert.equal(normalizeLocale("zh-Hant-HK"), "zh-TW");
+  assert.equal(normalizeLocale("zh-CN"), "zh-CN");
+  assert.equal(translate("ja", "scanNumber", { page: 3 }), "スキャン 3");
+});
 
 test("normalizes OpenAI-compatible chat completion endpoints", () => {
   assert.equal(endpoint("https://example.com/v1"), "https://example.com/v1/chat/completions");

@@ -14,69 +14,79 @@
       <h1>Scan to EPUB</h1>
     </div>
     <div>
-      <p class="tagline">스캔 페이지를 복제하지 않고, 읽히는 전자책으로 재구성합니다.</p>
+      <label class="ui-language"><span data-i18n="uiLanguage">UI 언어</span>
+        <select id="ui-language">
+          <option value="ko">한국어</option>
+          <option value="en">English</option>
+          <option value="zh-CN">简体中文</option>
+          <option value="zh-TW">繁體中文</option>
+          <option value="ja">日本語</option>
+        </select>
+      </label>
+      <p class="tagline" data-i18n="tagline">스캔 페이지를 복제하지 않고, 읽히는 전자책으로 재구성합니다.</p>
       <p id="update-status" class="update-status" aria-live="polite"></p>
     </div>
   </header>
 
   <main>
-    <aside class="controls" aria-label="변환 설정">
+    <aside class="controls" aria-label="변환 설정" data-i18n-aria="conversionSettings">
       <section class="panel">
-        <h2>1. 스캔 PDF</h2>
+        <h2 data-i18n="scanPdf">1. 스캔 PDF</h2>
         <label class="file-drop">
           <input id="pdf-input" type="file" accept="application/pdf,.pdf">
-          <span id="file-label">PDF 선택</span>
-          <small>깔끔한 파괴식 스캔본을 권장합니다.</small>
+          <span id="file-label" data-i18n="choosePdf">PDF 선택</span>
+          <small data-i18n="scanHint">깔끔한 파괴식 스캔본을 권장합니다.</small>
         </label>
-        <p id="pdf-summary" class="muted">아직 선택된 파일이 없습니다.</p>
+        <p id="pdf-summary" class="muted" data-i18n="noPdf">아직 선택된 파일이 없습니다.</p>
         <div class="field-row">
-          <label>시작
+          <label><span data-i18n="start">시작</span>
             <input id="range-start" type="number" min="1" value="1">
           </label>
-          <label>끝
+          <label><span data-i18n="end">끝</span>
             <input id="range-end" type="number" min="1" value="1">
           </label>
         </div>
       </section>
 
       <section class="panel">
-        <h2>2. 멀티모달 API</h2>
-        <label>OpenAI 호환 주소
+        <h2 data-i18n="multimodalApi">2. 멀티모달 API</h2>
+        <label><span data-i18n="apiAddress">OpenAI 호환 주소</span>
           <input id="base-url" type="url" value="https://api.openai.com/v1" spellcheck="false">
         </label>
-        <label>모델
-          <input id="model" type="text" placeholder="멀티모달 모델 이름" spellcheck="false">
+        <label><span data-i18n="model">모델</span>
+          <input id="model" type="text" placeholder="멀티모달 모델 이름" data-i18n-placeholder="modelPlaceholder" spellcheck="false">
         </label>
-        <label>API 키
-          <input id="api-key" type="password" placeholder="로컬 서버라면 비워도 됩니다" autocomplete="off">
+        <label><span data-i18n="apiKey">API 키</span>
+          <input id="api-key" type="password" placeholder="로컬 서버라면 비워도 됩니다" data-i18n-placeholder="apiKeyPlaceholder" autocomplete="off">
         </label>
-        <label>병렬 요청 수
+        <label><span data-i18n="concurrency">병렬 요청 수</span>
           <input id="concurrency" type="number" min="1" max="12" value="3">
         </label>
-        <p class="muted">실패·미처리 페이지만 이어서 분석합니다.</p>
+        <p class="muted" data-i18n="resumeHint">실패·미처리 페이지만 이어서 분석합니다.</p>
       </section>
 
       <section class="panel">
-        <h2>3. 책 정보</h2>
-        <label>제목
+        <h2 data-i18n="bookInfo">3. 책 정보</h2>
+        <label><span data-i18n="title">제목</span>
           <input id="book-title" type="text">
         </label>
-        <label>저자
+        <label><span data-i18n="author">저자</span>
           <input id="book-author" type="text">
         </label>
-        <label>언어
+        <label><span data-i18n="bookLanguage">책 언어 (BCP 47)</span>
           <input id="book-language" type="text" value="ko" maxlength="16">
+          <small class="field-help" data-i18n="bookLanguageHint">예: ko, en, ja, zh-Hans, zh-Hant</small>
         </label>
         <label class="check">
           <input id="use-cover" type="checkbox" checked>
-          첫 스캔 페이지를 표지로 사용
+          <span data-i18n="useCover">첫 스캔 페이지를 표지로 사용</span>
         </label>
       </section>
 
       <div class="actions">
-        <button id="analyze" class="primary" disabled>분석 시작 / 이어서</button>
-        <button id="cancel" class="secondary" disabled>중지</button>
-        <button id="export" class="secondary" disabled>EPUB 저장</button>
+        <button id="analyze" class="primary" data-i18n="analyze" disabled>분석 시작 / 이어서</button>
+        <button id="cancel" class="secondary" data-i18n="cancel" disabled>중지</button>
+        <button id="export" class="secondary" data-i18n="saveEpub" disabled>EPUB 저장</button>
       </div>
 
       <div class="progress-wrap" aria-live="polite">
@@ -85,18 +95,18 @@
       </div>
     </aside>
 
-    <section class="workspace" aria-label="페이지 분석 결과">
+    <section class="workspace" aria-label="페이지 분석 결과" data-i18n-aria="analysisResults">
       <div class="workspace-head">
         <div>
           <p class="eyebrow">RECONSTRUCTION</p>
-          <h2>변환 결과</h2>
+          <h2 data-i18n="results">변환 결과</h2>
         </div>
         <span id="result-count" class="count">0개 분석됨</span>
       </div>
       <div id="empty-state" class="empty-state">
         <div class="empty-mark">Aa</div>
-        <h3>원본 페이지 경계는 여기서 사라집니다.</h3>
-        <p>일반 페이지는 연속 텍스트가 되고, 디자인 보존이 필요한 페이지만 이미지 한 장으로 남습니다.</p>
+        <h3 data-i18n="emptyTitle">원본 페이지 경계는 여기서 사라집니다.</h3>
+        <p data-i18n="emptyText">일반 페이지는 연속 텍스트가 되고, 디자인 보존이 필요한 페이지만 이미지 한 장으로 남습니다.</p>
       </div>
       <div id="results" class="results"></div>
     </section>

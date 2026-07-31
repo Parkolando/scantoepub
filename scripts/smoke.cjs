@@ -163,6 +163,27 @@ async function main() {
       });
       return result.result.value;
     });
+    const language = await cdp.call("Runtime.evaluate", {
+      expression: `(() => {
+        const select = document.querySelector('#ui-language');
+        select.value = 'en';
+        select.dispatchEvent(new Event('change'));
+        const translated = {
+          lang: document.documentElement.lang,
+          analyze: document.querySelector('#analyze').textContent,
+          bookLanguage: document.querySelector('[data-i18n="bookLanguage"]').textContent
+        };
+        select.value = 'ko';
+        select.dispatchEvent(new Event('change'));
+        return translated;
+      })()`,
+      returnByValue: true
+    });
+    assert.deepEqual(language.result.value, {
+      lang: "en",
+      analyze: "Start / resume analysis",
+      bookLanguage: "Book language (BCP 47)"
+    });
     const document = await cdp.call("DOM.getDocument");
     const input = await cdp.call("DOM.querySelector", {
       nodeId: document.root.nodeId,

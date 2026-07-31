@@ -1,5 +1,6 @@
 import * as pdfjs from "../node_modules/pdfjs-dist/build/pdf.mjs";
 import { createEpub } from "./epub.mjs";
+import { applyStaticTranslations, normalizeLocale, translate } from "./i18n.mjs";
 import { runPool } from "./pool.mjs";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -18,6 +19,7 @@ const elements = {
   model: $("#model"),
   apiKey: $("#api-key"),
   concurrency: $("#concurrency"),
+  uiLanguage: $("#ui-language"),
   title: $("#book-title"),
   author: $("#book-author"),
   language: $("#book-language"),
@@ -39,23 +41,40 @@ const state = {
   fileName: "",
   pages: [],
   running: false,
-  canceled: false
+  canceled: false,
+  locale: normalizeLocale(localStorage.getItem("uiLanguage") || navigator.language),
+  status: { key: "selectPdf", values: {} },
+  update: null
 };
 
 elements.baseUrl.value = localStorage.getItem("baseUrl") || elements.baseUrl.value;
 elements.model.value = localStorage.getItem("model") || "";
 elements.concurrency.value = localStorage.getItem("concurrency") || "3";
+elements.uiLanguage.value = state.locale;
 
-window.desktop.onUpdateStatus(({ state: updateState, version, percent }) => {
-  const messages = {
-    checking: "업데이트 확인 중…",
-    available: `업데이트 ${version} 다운로드 중…`,
-    current: "최신 버전",
-    downloading: `업데이트 다운로드 ${percent}%`,
-    downloaded: `업데이트 ${version} 설치 준비 완료`,
-    error: "업데이트 확인 실패"
+const t = (key, values) => translate(state.locale, key, values);
+
+function setStatus(key, values = {}) {
+  state.status = { key, values };
+  elements.status.textContent = t(key, values);
+}
+
+function renderUpdateStatus() {
+  if (!state.update) return;
+  const keys = {
+    checking: "updateChecking",
+    available: "updateAvailable",
+    current: "updateCurrent",
+    downloading: "updateDownloading",
+    downloaded: "updateDownloaded",
+    error: "updateError"
   };
-  elements.updateStatus.textContent = messages[updateState] || "";
+  elements.updateStatus.textContent = t(keys[state.update.state] || "", state.update);
+}
+
+window.desktop.onUpdateStatus((status) => {
+  state.update = status;
+  renderUpdateStatus();
 });
 
 function toast(message) {
@@ -78,9 +97,37 @@ function updateControls() {
   elements.analyze.disabled = !state.pdf || state.running;
   elements.cancel.disabled = !state.running;
   elements.export.disabled = analyzed === 0 || state.running;
-  elements.count.textContent = `${analyzed}개 분석됨`;
+  elements.count.textContent = t("analyzedCount", { count: analyzed.toLocaleString(state.locale) });
   elements.empty.hidden = analyzed > 0 || state.pages.some((page) => page.error);
 }
+
+function renderResults() {
+  elements.results.replaceChildren(...state.pages
+    .filter((page) => page.analysis || page.error)
+    .map((page) => page.analysis ? pageCard(page) : renderError(page)));
+}
+
+function applyLanguage() {
+  applyStaticTranslations(document, state.locale);
+  elements.uiLanguage.value = state.locale;
+  if (state.fileName) elements.fileLabel.textContent = state.fileName;
+  if (state.pdf) {
+    elements.pdfSummary.textContent = t("pdfSummary", {
+      pages: state.pdf.numPages.toLocaleString(state.locale)
+    });
+  }
+  setStatus(state.status.key, state.status.values);
+  renderUpdateStatus();
+  renderResults();
+  updateControls();
+  window.desktop.setUiLanguage(state.locale);
+}
+
+elements.uiLanguage.addEventListener("change", () => {
+  state.locale = normalizeLocale(elements.uiLanguage.value);
+  localStorage.setItem("uiLanguage", state.locale);
+  applyLanguage();
+});
 
 function resizeCanvas(source, maxDimension) {
   const scale = Math.min(1, maxDimension / Math.max(source.width, source.height));
@@ -169,17 +216,17 @@ function pageCard(page) {
   head.className = "page-card-head";
   const title = document.createElement("div");
   title.className = "page-title";
-  title.append(`스캔 ${page.number}`);
+  title.append(t("scanNumber", { page: page.number }));
   const badge = document.createElement("span");
   badge.className = `badge ${page.analysis.mode === "full_page_image" ? "fixed" : ""}`;
-  badge.textContent = page.analysis.mode === "full_page_image" ? "전체 이미지" : "연속 텍스트";
+  badge.textContent = t(page.analysis.mode === "full_page_image" ? "fullImage" : "reflowText");
   title.append(badge);
   const confidence = document.createElement("span");
   confidence.className = "confidence";
-  confidence.textContent = `신뢰도 ${Math.round(page.analysis.confidence * 100)}%`;
+  confidence.textContent = t("confidence", { percent: Math.round(page.analysis.confidence * 100) });
   const retry = document.createElement("button");
   retry.className = "retry";
-  retry.textContent = "다시 분석";
+  retry.textContent = t("analyzeAgain");
   retry.addEventListener("click", () => retryPage(page.number));
   head.append(title, confidence, retry);
 
@@ -189,7 +236,7 @@ function pageCard(page) {
   source.className = "source";
   const sourceImage = document.createElement("img");
   sourceImage.src = page.thumbnail;
-  sourceImage.alt = `원본 스캔 ${page.number}`;
+  sourceImage.alt = t("sourceScan", { page: page.number });
   source.append(sourceImage);
 
   const preview = document.createElement("div");
@@ -243,10 +290,10 @@ function renderError(page) {
   card.className = "error-card";
   card.dataset.page = page.number;
   const message = document.createElement("strong");
-  message.textContent = `스캔 ${page.number}: ${page.error}`;
+  message.textContent = t("scanError", { page: page.number, error: page.error });
   const retry = document.createElement("button");
   retry.className = "retry";
-  retry.textContent = "다시 시도";
+  retry.textContent = t("tryAgain");
   retry.addEventListener("click", () => retryPage(page.number));
   card.append(message, " ", retry);
   return card;
@@ -263,7 +310,7 @@ function replaceResult(page) {
 async function processPage(number, previousTail = "") {
   const pageState = state.pages[number - 1];
   pageState.error = "";
-  elements.status.textContent = `${number}페이지를 렌더링하는 중…`;
+  setStatus("renderingPage", { page: number });
   const canvas = await renderPdfPage(number);
   const thumbnailCanvas = resizeCanvas(canvas, 320);
   const analysisCanvas = resizeCanvas(canvas, 1800);
@@ -305,7 +352,7 @@ async function processPage(number, previousTail = "") {
 async function retryPage(number) {
   if (state.running) return;
   if (!elements.model.value.trim()) {
-    toast("모델을 입력하세요.");
+    toast(t("modelRequired"));
     return;
   }
   state.running = true;
@@ -313,13 +360,13 @@ async function retryPage(number) {
   try {
     const previous = number > 1 ? tailFrom(state.pages[number - 2]) : "";
     await processPage(number, previous);
-    elements.status.textContent = `${number}페이지를 다시 분석했습니다.`;
+    setStatus("reanalyzed", { page: number });
   } catch (error) {
     const page = state.pages[number - 1];
     page.analysis = null;
     page.error = errorText(error);
     replaceResult(page);
-    elements.status.textContent = "다시 분석하지 못했습니다.";
+    setStatus("reanalysisFailed");
   } finally {
     state.running = false;
     updateControls();
@@ -330,7 +377,7 @@ elements.pdfInput.addEventListener("change", async () => {
   const file = elements.pdfInput.files[0];
   if (!file) return;
   try {
-    elements.status.textContent = "PDF를 여는 중…";
+    setStatus("openingPdf");
     const loading = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
     state.pdf = await loading.promise;
     state.fileName = file.name;
@@ -341,18 +388,20 @@ elements.pdfInput.addEventListener("change", async () => {
       error: ""
     }));
     elements.fileLabel.textContent = file.name;
-    elements.pdfSummary.textContent = `${state.pdf.numPages.toLocaleString()}쪽 · 원본 페이지 경계는 출력에서 제거됩니다.`;
+    elements.pdfSummary.textContent = t("pdfSummary", {
+      pages: state.pdf.numPages.toLocaleString(state.locale)
+    });
     elements.rangeStart.max = elements.rangeEnd.max = state.pdf.numPages;
     elements.rangeStart.value = 1;
     elements.rangeEnd.value = state.pdf.numPages;
     elements.title.value = safeFileName(file.name);
     elements.results.replaceChildren();
     elements.progress.style.width = "0%";
-    elements.status.textContent = "분석할 범위와 API를 확인하세요.";
+    setStatus("checkRangeApi");
     updateControls();
   } catch (error) {
     state.pdf = null;
-    elements.status.textContent = `PDF를 열지 못했습니다: ${errorText(error)}`;
+    setStatus("openPdfFailed", { error: errorText(error) });
     updateControls();
   }
 });
@@ -361,17 +410,17 @@ elements.analyze.addEventListener("click", async () => {
   const start = Math.max(1, Number(elements.rangeStart.value) || 1);
   const end = Math.min(state.pages.length, Number(elements.rangeEnd.value) || state.pages.length);
   const concurrency = Math.max(1, Math.min(12, Math.floor(Number(elements.concurrency.value) || 1)));
-  if (start > end) return toast("페이지 범위를 확인하세요.");
+  if (start > end) return toast(t("invalidRange"));
   if (!elements.baseUrl.value.trim() || !elements.model.value.trim()) {
-    return toast("API 주소와 모델을 입력하세요.");
+    return toast(t("apiModelRequired"));
   }
   const pending = state.pages
     .slice(start - 1, end)
     .filter((page) => !page.analysis)
     .map((page) => page.number);
   if (!pending.length) {
-    elements.status.textContent = "선택한 범위는 이미 모두 분석됐습니다.";
-    return toast("실패하거나 미처리된 페이지가 없습니다.");
+    setStatus("alreadyAnalyzed");
+    return toast(t("nothingPending"));
   }
 
   localStorage.setItem("baseUrl", elements.baseUrl.value.trim());
@@ -398,18 +447,22 @@ elements.analyze.addEventListener("click", async () => {
     } finally {
       completed += 1;
       elements.progress.style.width = `${completed / pending.length * 100}%`;
-      elements.status.textContent = `병렬 분석 중… ${completed}/${pending.length} 완료${failed ? ` · 실패 ${failed}` : ""}`;
+      setStatus("parallelProgress", {
+        completed,
+        total: pending.length,
+        failed: failed ? t("failedSuffix", { count: failed }) : ""
+      });
     }
   }, () => state.canceled);
 
   state.running = false;
   const remaining = state.pages.slice(start - 1, end).filter((page) => !page.analysis).length;
   if (state.canceled) {
-    elements.status.textContent = `분석을 중지했습니다. ${remaining}페이지가 남았습니다. 다시 누르면 이어집니다.`;
+    setStatus("stopped", { remaining });
   } else if (failed) {
-    elements.status.textContent = `${completed - failed}페이지 완료 · ${failed}페이지 실패. 다시 누르면 실패한 페이지부터 이어집니다.`;
+    setStatus("partialFailed", { completed: completed - failed, failed });
   } else {
-    elements.status.textContent = "선택한 범위의 분석이 끝났습니다.";
+    setStatus("analysisComplete");
   }
   updateControls();
 });
@@ -417,17 +470,20 @@ elements.analyze.addEventListener("click", async () => {
 elements.cancel.addEventListener("click", () => {
   state.canceled = true;
   elements.cancel.disabled = true;
-  elements.status.textContent = "진행 중인 요청이 끝나면 중지합니다…";
+  setStatus("stopping");
 });
 
 elements.export.addEventListener("click", async () => {
   const analyzed = state.pages.filter((page) => page.analysis);
   if (!analyzed.length) return;
-  if (analyzed.length !== state.pages.length && !confirm(`전체 ${state.pages.length}쪽 중 ${analyzed.length}쪽만 분석됐습니다. 이 결과만 EPUB으로 저장할까요?`)) {
+  if (analyzed.length !== state.pages.length && !confirm(t("partialExportConfirm", {
+    total: state.pages.length,
+    analyzed: analyzed.length
+  }))) {
     return;
   }
   try {
-    elements.status.textContent = "EPUB 파일을 만드는 중…";
+    setStatus("buildingEpub");
     const bytes = await createEpub(window.JSZip, state.pages, {
       title: elements.title.value,
       author: elements.author.value,
@@ -439,16 +495,16 @@ elements.export.addEventListener("click", async () => {
       defaultName: `${safeFileName(elements.title.value || state.fileName)}.epub`
     });
     if (filePath) {
-      elements.status.textContent = `저장 완료: ${filePath}`;
-      toast("EPUB 저장 완료");
-      if (confirm("저장된 파일을 폴더에서 볼까요?")) window.desktop.showFile(filePath);
+      setStatus("saved", { path: filePath });
+      toast(t("savedToast"));
+      if (confirm(t("showSaved"))) window.desktop.showFile(filePath);
     } else {
-      elements.status.textContent = "저장을 취소했습니다.";
+      setStatus("saveCanceled");
     }
   } catch (error) {
-    elements.status.textContent = `EPUB 생성 실패: ${errorText(error)}`;
+    setStatus("epubFailed", { error: errorText(error) });
   }
 });
 
-updateControls();
+applyLanguage();
 document.documentElement.dataset.appReady = "true";
